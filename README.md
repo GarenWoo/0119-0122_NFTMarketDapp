@@ -2,6 +2,6 @@
 
 ![IMG0_Task](./images/IMG0_Task.jpg)
 
-```solidity
+### 前端页面
 
-```
+![IMG1_FrontPage](./images/IMG1_FrontPage.png)
