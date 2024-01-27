@@ -39,6 +39,24 @@ const App = () => {
   const bidValueRef_Buy = useRef<HTMLInputElement>(null);
   const disableConnect = Boolean(wallet) && isConnecting
 
+  // ERC20-Permit inputs
+  const permit_Name = useRef<HTMLInputElement>(null);
+  const permit_ChainId = useRef<HTMLInputElement>(null);
+  const permit_VerifyingContract = useRef<HTMLInputElement>(null);
+  const permit_Spender = useRef<HTMLInputElement>(null);
+  const permit_ApprovedValue = useRef<HTMLInputElement>(null);
+  const permit_Deadline = useRef<HTMLInputElement>(null);
+  const permit_SignerAddr = useRef<HTMLInputElement>(null);
+
+  // NFT-Permit inputs
+  const permit_Name_NFT = useRef<HTMLInputElement>(null);
+  const permit_ChainId_NFT = useRef<HTMLInputElement>(null);
+  const permit_VerifyingContract_NFT = useRef<HTMLInputElement>(null);
+  const permit_NFTSeller_NFT = useRef<HTMLInputElement>(null);
+  const permit_buyer_NFT = useRef<HTMLInputElement>(null);
+  const permit_tokenId_NFT = useRef<HTMLInputElement>(null);
+  const permit_deadline_NFT = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     let provider: ethers.BrowserProvider
     const refreshAccounts = async () => {
@@ -161,7 +179,6 @@ const App = () => {
         }
       }
       TxURL_Delist = scanURL + 'tx/' + tx.hash
-      console.log(`TxURL_Delist@handleNFTMarket_Delist: ${TxURL_Delist}`)
       setError(false)
     } catch (err: any) {
       setError(true)
@@ -223,12 +240,21 @@ const App = () => {
         NFTMarketAddress = "0xF0B5972a88F201B1a83d87a1de2a6569d66fac58"
         scanURL = 'https://mumbai.polygonscan.com/'
         break;
+
       // Ethereum Goerli
       case '5':
         GTTAddress = "0x6307230425563aA7D0000213f579516159CDf84a"
         NFTMarketAddress = "0xAFD443aF73e81BFBA794124083b4C71aEbdC25BF"
         scanURL = 'https://goerli.etherscan.io/'
         break;
+
+      // Ethereum Sepolia
+      case '11155111':
+        GTTAddress = "0x3490ff3bc24146AA6140e1efd5b0A0fAAEda39E9"
+        NFTMarketAddress = "0x15f5748131bF26caa4eF66978743e15A473C1475"
+        scanURL = 'https://goerli.etherscan.io/'
+        break;
+
       default:
         GTTAddress = ""
         NFTMarketAddress = ""
@@ -296,17 +322,15 @@ const App = () => {
       filter.toBlock = currentBlock;
     }
     provider.getLogs(filter).then(logs => {
-      console.log(fromBlock,toBlock,logs.length);
       if (logs.length > 0) decodeEvents(logs)
       if (currentBlock <= fromBlock && logs.length == 0) {
-        console.log("begin monitor")
+        // console.log("begin monitor")
         // 方式1，继续轮训
         // setTimeout(() => {
         //     getLogs(fromBlock, toBlock)
         // }, 2000);
         // 方式2: 监听
         NFTMarket.on("NFTListed", function (a0, a1, a2, event) {
-
           decodeEvents([event.log])
         })
         NFTMarket.on("NFTDelisted", function (a0, a1, event) {
@@ -339,6 +363,143 @@ const App = () => {
         const data = NFTMarket.interface.decodeEventLog(event_NFTBought, item.data, item.topics)
         printLog(`NFTBought@Block#${item.blockNumber} | Parameters: { NFTAddress:${data.NFTAddr}, tokenId: ${data.tokenId}, bidValue: ${data.bidValue} } (${item.transactionHash})`)
       }
+    }
+  }
+
+  // ERC20-Permit(ERC2612) sign typed data
+  const signPermit = async () => {
+    const name = permit_Name.current?.value;
+    const version = "1";
+    const chainId = permit_ChainId.current?.value;
+    const verifyingContract = permit_VerifyingContract.current?.value;
+    const spender = permit_Spender.current?.value;
+    const value = permit_ApprovedValue.current?.value;
+    const deadline = permit_Deadline.current?.value;
+    const signerAddress = permit_SignerAddr.current?.value;
+    const provider = new ethers.BrowserProvider(window.ethereum)
+    const signer = await provider.getSigner()
+    const owner = await signer.getAddress();
+    const tokenAddress = verifyingContract;
+    const tokenAbi = ["function nonces(address owner) view returns (uint256)"];
+    let tokenContract
+    let nonce
+    if (tokenAddress) {
+      tokenContract = new ethers.Contract(tokenAddress, tokenAbi, provider);
+      nonce = await tokenContract.nonces(signerAddress);
+    } else {
+      console.log("Invalid token address");
+    }
+
+    console.log(`signerAddress: ${signerAddress}`)
+    console.log(`owner: ${owner}`)
+
+    const domain = {
+      name: name,
+      version: version,
+      chainId: chainId,
+      verifyingContract: verifyingContract,
+    };
+
+    const types = {
+      Permit: [
+        { name: "owner", type: "address" },
+        { name: "spender", type: "address" },
+        { name: "value", type: "uint256" },
+        { name: "nonce", type: "uint256" },
+        { name: "deadline", type: "uint256" }
+      ],
+    };
+
+    const message = {
+      owner: owner,
+      spender: spender,
+      value: value,
+      nonce: nonce,
+      deadline: deadline,
+    };
+
+    try {
+      console.log(`Domin || name: ${domain.name}, version: ${domain.version}, chainId: ${domain.chainId}, verifyingContract: ${domain.verifyingContract}`)
+      console.log("Types || Permit: ", JSON.stringify(types.Permit, null, 2));
+      console.log(`message || owner: ${message.owner}, spender: ${message.spender}, value: ${message.value}, deadline: ${message.deadline}, nonce: ${message.nonce}`)
+      console.log(`message: ${message}`)
+      const signedMessage = await signer.signTypedData(domain, types, message);
+      console.log("Signature:", signedMessage);
+      const signatureResult = ethers.Signature.from(signedMessage);
+      console.log("v: ", signatureResult.v);
+      console.log("r: ", signatureResult.r);
+      console.log("s: ", signatureResult.s);
+    } catch (error) {
+      console.error("Error signing permit:", error);
+    }
+  }
+
+  // ERC721-Permit sign typed data
+  const signNFTPermit = async () => {
+    const name = permit_Name_NFT.current?.value;          // 不同：直接写死
+    const version = "1";
+    const chainId = permit_ChainId_NFT.current?.value;
+    const verifyingContract = permit_VerifyingContract_NFT.current?.value;    // 不同：直接写死
+    const buyer = permit_buyer_NFT.current?.value;
+    const tokenId = permit_tokenId_NFT.current?.value;
+    const deadline = permit_deadline_NFT.current?.value;
+    const provider = new ethers.BrowserProvider(window.ethereum)
+    const signer = await provider.getSigner()
+    const signerAddress = await signer.getAddress();
+    const tokenAddress = verifyingContract;
+    const tokenAbi = ["function nonces(address owner) view returns (uint256)"];   // 不同：public、无 view
+    let ERC721WithPermitContract
+    let nonce
+    if (tokenAddress) {
+      ERC721WithPermitContract = new ethers.Contract(tokenAddress, tokenAbi, provider);
+      nonce = await ERC721WithPermitContract.nonces(signerAddress);
+    } else {
+      console.log("Invalid token address");
+    }
+
+    const domain = {
+      name: name,
+      version: version,
+      chainId: chainId,
+      verifyingContract: verifyingContract,
+    };
+
+    const types = {
+      NFTPermit: [
+        { name: "buyer", type: "address" },
+        { name: "tokenId", type: "uint256" },
+        { name: "signerNonce", type: "uint256" },
+        { name: "deadline", type: "uint256" }
+      ],
+    };
+
+    const message = {
+      buyer: buyer,
+      tokenId: tokenId,
+      signerNonce: nonce,
+      deadline: deadline,
+    };
+
+    try {
+      console.log(`ERC721WithPermitContract: ${ERC721WithPermitContract}, signerAddress: ${signerAddress}`);
+      console.log(`Domin || name: ${domain.name}, typeof(name): ${typeof(domain.name)}`)
+      console.log(`Domin || version: ${domain.version}, typeof(version): ${typeof(domain.version)}`)
+      console.log(`Domin || chainId: ${domain.chainId}, typeof(chainId): ${typeof(domain.chainId)}`)
+      console.log(`Domin || verifyingContract: ${domain.verifyingContract}, typeof(verifyingContract): ${typeof(domain.verifyingContract)}`)
+      console.log("Types || NFTPermit: ", JSON.stringify(types.NFTPermit, null, 2))
+      console.log(`message || buyer: ${message.buyer}, typeof(buyer): ${typeof(message.buyer)}`)
+      console.log(`message || tokenId: ${message.tokenId}, typeof(tokenId): ${typeof(message.tokenId)}`)
+      console.log(`message || signerNonce: ${message.signerNonce}, typeof(signerNonce): ${typeof(message.signerNonce)}`)
+      console.log(`message || deadline: ${message.deadline}, typeof(deadline): ${typeof(message.deadline)}`)
+
+      const signedMessage = await signer.signTypedData(domain, types, message);
+      console.log("Signature(ERC721-Permit):", signedMessage);
+      const signatureResult = ethers.Signature.from(signedMessage);
+      console.log("v: ", signatureResult.v);
+      console.log("r: ", signatureResult.r);
+      console.log("s: ", signatureResult.s);
+    } catch (error) {
+      console.error("Error signing permit:", error);
     }
   }
 
@@ -453,6 +614,46 @@ const App = () => {
             {TxURL_Buy != null &&
               <>
                 <button id="TxOfBuy" v-show="TxURL_Buy" onClick={() => openTxUrl_Buy()}> Transaction </button>
+              </>
+            }
+            <br />
+            <h3 style={{ fontSize: '20px' }}>Create Signature for Permit(ERC20): </h3>
+            {window.ethereum?.isMetaMask && wallet.accounts.length > 0 &&
+              <>
+                <label>Token Name:</label>
+                <input ref={permit_Name} placeholder="Token Name" type="text" />
+                <label>ChainId:</label>
+                <input ref={permit_ChainId} placeholder="ChainId" type="text" />
+                <label>Verifying Contract Address:</label>
+                <input ref={permit_VerifyingContract} placeholder="Verifying Contract Address" type="text" />
+                <label>Spender:</label>
+                <input ref={permit_Spender} placeholder="Spender Address" type="text" />
+                <label>Approved Value:</label>
+                <input ref={permit_ApprovedValue} placeholder="Approved Value" type="text" />
+                <label>Deadline:</label>
+                <input ref={permit_Deadline} placeholder="Deadline" type="text" />
+                <label>Signer's Address(Check Nonce):</label>
+                <input ref={permit_SignerAddr} placeholder="Signer's Address" type="text" />
+                <button onClick={signPermit}>SignTypedData</button>
+              </>
+            }
+            <br />
+            <h3 style={{ fontSize: '20px' }}>Create Signature for Permit(ERC721): </h3>
+            {window.ethereum?.isMetaMask && wallet.accounts.length > 0 &&
+              <>
+                <label>Token Name:</label>
+                <input ref={permit_Name_NFT} placeholder="Token Name" type="text" />
+                <label>ChainId:</label>
+                <input ref={permit_ChainId_NFT} placeholder="ChainId" type="text" />
+                <label>Verifying Contract Address:</label>
+                <input ref={permit_VerifyingContract_NFT} placeholder="Verifying Contract Address" type="text" />
+                <label>Buyer:</label>
+                <input ref={permit_buyer_NFT} placeholder="Buyer" type="text" />
+                <label>tokenId:</label>
+                <input ref={permit_tokenId_NFT} placeholder="tokenId" type="text" />
+                <label>Deadline:</label>
+                <input ref={permit_deadline_NFT} placeholder="Deadline" type="text" />
+                <button onClick={signNFTPermit}>SignTypedData(For NFT)</button>
               </>
             }
           </div>
